@@ -36,6 +36,10 @@ local defaults = {
   -- Sticky headers
   sticky_headers = true,  -- Show ancestor headers at top of window when scrolled past
 
+  -- Multi-panel (Phase 7)
+  multi_panel = false,          -- Enable left panel with group tabs (requires nvim-float)
+  left_panel_width = 0.25,      -- Left panel width ratio
+
   -- Behavior
   auto_refresh = false,  -- Auto-refresh todos periodically
   refresh_interval_ms = 30000,  -- 30 seconds
