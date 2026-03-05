@@ -26,10 +26,12 @@ local pantry = require('sheet_todo.pantry')
 ---@field groups GroupEntry[]
 ---@field active_group string? Dot-separated path
 ---@field loaded boolean
+---@field dirty boolean True when in-memory state differs from Pantry
 local state = {
   groups = {},
   active_group = nil,
   loaded = false,
+  dirty = false,
 }
 
 -- ============================================================================
@@ -181,6 +183,7 @@ function M.load(data)
   end
 
   state.loaded = true
+  state.dirty = false
 end
 
 ---Serialize state to version 2 format ready for Pantry (Base64-encodes content recursively).
@@ -263,6 +266,7 @@ function M.set_active_content(content)
   local g = M.find_group(state.active_group)
   if g then
     g.content = content
+    state.dirty = true
   end
 end
 
@@ -535,11 +539,23 @@ function M.get_group_count()
   return count_all_groups(state.groups)
 end
 
----Reset all state (on close).
+---Mark in-memory state as matching Pantry (called after successful save).
+function M.mark_as_saved()
+  state.dirty = false
+end
+
+---Check if in-memory state has unsaved changes.
+---@return boolean
+function M.has_unsaved_changes()
+  return state.dirty
+end
+
+---Reset all state (discard unsaved changes).
 function M.reset()
   state.groups = {}
   state.active_group = nil
   state.loaded = false
+  state.dirty = false
 end
 
 -- Expose path utilities for multi_panel

@@ -30,6 +30,7 @@ local state = {
 local PANEL_GROUPS = "groups"
 local PANEL_EDITOR = "editor"
 local unsaved_marker = "\u{25cf}"
+local line_numbers_visible = false
 
 -- ============================================================================
 -- TREE STATE (UI-only, not persisted)
@@ -628,6 +629,14 @@ local function handle_close()
   M.close()
 end
 
+local function handle_toggle_line_numbers()
+  if not state.right_win or not vim.api.nvim_win_is_valid(state.right_win) then
+    return
+  end
+  line_numbers_visible = not line_numbers_visible
+  vim.api.nvim_set_option_value('number', line_numbers_visible, { win = state.right_win })
+end
+
 -- ============================================================================
 -- CONTROLS
 -- ============================================================================
@@ -664,6 +673,7 @@ local function build_controls()
     { header = "View", keys = {
       { key = fmt_key(km.toggle_completed), desc = "Hide/show completed" },
       { key = fmt_key(km.next_todo), desc = "Jump to next todo" },
+      { key = fmt_key(km.toggle_line_numbers), desc = "Toggle line numbers" },
     }},
     { header = "Folding", keys = {
       { key = "za", desc = "Toggle fold" },
@@ -785,6 +795,9 @@ function M.show(on_save_callback)
     vim.api.nvim_set_option_value('wrap', true, { win = state.right_win })
     vim.api.nvim_set_option_value('linebreak', true, { win = state.right_win })
 
+    -- Line numbers hidden by default
+    vim.api.nvim_set_option_value('number', false, { win = state.right_win })
+
     -- Change tracking
     attach_change_tracking(state.right_buf)
 
@@ -842,6 +855,10 @@ function M.show(on_save_callback)
   local next_key = km.next_todo
   if type(next_key) == 'table' then next_key = next_key[1] end
   right_keymaps[next_key] = handle_next_todo
+
+  local line_num_key = km.toggle_line_numbers
+  if type(line_num_key) == 'table' then line_num_key = line_num_key[1] end
+  right_keymaps[line_num_key] = handle_toggle_line_numbers
 
   panel_state:set_panel_keymaps(PANEL_EDITOR, right_keymaps)
 
@@ -934,6 +951,7 @@ function M.cleanup()
   tree_state.expanded = {}
   tree_state.visible_nodes = {}
   hl_cache = {}
+  line_numbers_visible = false
 end
 
 ---Close the multi-panel UI.

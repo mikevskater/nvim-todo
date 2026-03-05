@@ -25,6 +25,7 @@ local defaults = {
     revert = '<A-r>',
     toggle_completed = '<leader>h',
     next_todo = 'n',
+    toggle_line_numbers = '<leader>l',
   },
 
   -- Completion

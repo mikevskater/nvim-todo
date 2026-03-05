@@ -25,7 +25,19 @@ function M.show()
   -- Disable change tracking during load
   multi_panel.set_ignore_changes(true)
 
-  -- Load content from Pantry (raw data for group_manager)
+  -- Check for unsaved in-memory content from previous session
+  if group_manager.is_loaded() then
+    multi_panel.set_content(group_manager.get_active_content())
+    vim.schedule(function()
+      multi_panel.set_cursor(group_manager.get_active_cursor())
+    end)
+    multi_panel.render_groups()
+    multi_panel.update_editor_title()
+    vim.notify("Restored unsaved changes", vim.log.levels.INFO)
+    return
+  end
+
+  -- Fresh load from Pantry
   M.state.loading = true
 
   pantry.get_raw_data(function(success, data, err)
@@ -90,6 +102,7 @@ function M.save()
       vim.notify("Saved successfully", vim.log.levels.INFO)
       M.state.last_error = nil
       multi_panel.mark_as_saved()
+      group_manager.mark_as_saved()
     else
       M.state.last_error = err
       vim.notify("Save failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
@@ -97,10 +110,15 @@ function M.save()
   end)
 end
 
--- Close the notepad
+-- Close the notepad (group_manager state persists for unsaved content recovery)
 function M.close()
   multi_panel.close()
+end
+
+-- Discard unsaved changes and reset group_manager state
+function M.discard()
   group_manager.reset()
+  vim.notify("Unsaved changes discarded. Next open will fetch from Pantry.", vim.log.levels.INFO)
 end
 
 -- Show status
@@ -153,6 +171,7 @@ function M.setup(opts)
   vim.api.nvim_create_user_command('TodoShow', M.show, {})
   vim.api.nvim_create_user_command('TodoSave', M.save, {})
   vim.api.nvim_create_user_command('TodoClose', M.close, {})
+  vim.api.nvim_create_user_command('TodoDiscard', M.discard, {})
   vim.api.nvim_create_user_command('TodoStatus', M.status, {})
 
   -- Register keymap
