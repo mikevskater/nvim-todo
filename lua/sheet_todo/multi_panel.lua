@@ -489,10 +489,9 @@ local function handle_set_icon()
   end)
 end
 
-local function handle_set_color()
-  local path = get_group_under_cursor()
-  if not path then return end
-
+---Fallback color picker using presets + manual hex input.
+---@param path string Group path
+local function pick_color_fallback(path)
   local presets = cfg.get('group_color_presets') or {}
   local items = {}
   for _, p in ipairs(presets) do
@@ -525,6 +524,30 @@ local function handle_set_color()
       end
     end)
   end)
+end
+
+local function handle_set_color()
+  local path = get_group_under_cursor()
+  if not path then return end
+
+  local node = get_node_under_cursor()
+  local cp_ok, colorpicker = pcall(require, "nvim-colorpicker")
+  if cp_ok then
+    local initial = (node and node.group.icon_color) or "#808080"
+    colorpicker.pick({
+      color = initial,
+      title = "Group Color: " .. (node and node.name or path),
+      on_select = function(result)
+        local hex = result.color
+        vim.schedule(function()
+          group_manager.set_colors(path, hex, hex)
+          state.panel_state:render_panel(PANEL_GROUPS)
+        end)
+      end,
+    })
+  else
+    pick_color_fallback(path)
+  end
 end
 
 local function handle_reorder_down()
