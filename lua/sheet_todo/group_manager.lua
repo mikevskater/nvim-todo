@@ -13,6 +13,8 @@ local pantry = require('sheet_todo.pantry')
 ---@field icon_color string? Hex color string
 ---@field name_color string? Hex color string
 ---@field children GroupEntry[]? Sub-groups (nil = leaf)
+---@field saved_content string? Content snapshot from last load/save (runtime only, not persisted)
+---@field dirty boolean? True when content differs from saved_content (runtime only, not persisted)
 
 ---@class TreeNode
 ---@field path string Dot-separated path
@@ -116,14 +118,17 @@ end
 ---@param raw table Raw group with Base64-encoded content
 ---@return GroupEntry
 local function decode_group(raw)
+  local decoded = pantry.decode_content(raw.content)
   local entry = {
     name = raw.name,
-    content = pantry.decode_content(raw.content),
+    content = decoded,
     cursor_pos = raw.cursor_pos or { line = 1, col = 0 },
     icon = raw.icon,
     icon_color = raw.icon_color,
     name_color = raw.name_color,
     children = nil,
+    saved_content = decoded,
+    dirty = false,
   }
   if raw.children and #raw.children > 0 then
     entry.children = {}
@@ -266,6 +271,7 @@ function M.set_active_content(content)
   local g = M.find_group(state.active_group)
   if g then
     g.content = content
+    g.dirty = (content ~= (g.saved_content or ""))
     state.dirty = true
   end
 end
@@ -386,6 +392,8 @@ function M.add_group(parent_path, name)
     name = name,
     content = "",
     cursor_pos = { line = 1, col = 0 },
+    saved_content = "",
+    dirty = false,
   })
   return true
 end
@@ -524,6 +532,19 @@ function M.set_colors(path, icon_color, name_color)
 end
 
 -- ============================================================================
+-- PER-GROUP DIRTY QUERIES
+-- ============================================================================
+
+---Check if a specific group has unsaved changes.
+---@param path string Dot-separated path
+---@return boolean
+function M.is_group_dirty(path)
+  local g = M.find_group(path)
+  if not g then return false end
+  return g.dirty == true
+end
+
+-- ============================================================================
 -- STATE MANAGEMENT
 -- ============================================================================
 
@@ -539,8 +560,21 @@ function M.get_group_count()
   return count_all_groups(state.groups)
 end
 
+---Recursively mark all groups as saved (snapshot content, clear dirty).
+---@param list GroupEntry[]
+local function mark_groups_saved(list)
+  for _, g in ipairs(list) do
+    g.saved_content = g.content
+    g.dirty = false
+    if g.children then
+      mark_groups_saved(g.children)
+    end
+  end
+end
+
 ---Mark in-memory state as matching Pantry (called after successful save).
 function M.mark_as_saved()
+  mark_groups_saved(state.groups)
   state.dirty = false
 end
 

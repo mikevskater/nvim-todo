@@ -49,6 +49,7 @@ local hl_cache = {} -- color hex -> highlight group name
 
 local function setup_highlights()
   vim.api.nvim_set_hl(0, 'SheetTodoActiveGroup', { default = true, bold = true })
+  vim.api.nvim_set_hl(0, 'SheetTodoUnsaved', { default = true, fg = '#E5C07B' })
 end
 
 ---Create or retrieve a cached highlight group for a hex color.
@@ -100,10 +101,19 @@ local function render_left_panel(_mp_state)
     local indent = string.rep("  ", node.level)
     local icon = get_group_icon(node.group, node.is_expanded, node.has_children)
     local line = indent .. icon .. " " .. node.name
+
+    -- Check if this group has unsaved changes
+    local is_active = (node.path == active_path)
+    -- Active group: use live buffer comparison; others: use stored dirty flag
+    local is_dirty = is_active and state.has_unsaved_changes or (not is_active and node.group.dirty == true)
+
+    if is_dirty then
+      line = line .. " " .. unsaved_marker
+    end
+
     table.insert(lines, line)
 
     local line_idx = i - 1  -- 0-indexed for nvim API
-    local is_active = (node.path == active_path)
 
     if is_active then
       -- Active group: bold highlight on whole line, no custom color
@@ -118,7 +128,7 @@ local function render_left_panel(_mp_state)
       local icon_start = #indent
       local icon_end = icon_start + #icon
       local name_start = icon_end + 1  -- +1 for space
-      local name_end = #line
+      local name_end = name_start + #node.name
 
       if node.group.icon_color and node.group.icon_color ~= "" then
         table.insert(highlights, {
@@ -135,6 +145,17 @@ local function render_left_panel(_mp_state)
           col_start = name_start,
           col_end = name_end,
           hl_group = get_color_hl(node.group.name_color),
+        })
+      end
+
+      -- Unsaved marker gets its own highlight (after name, for non-active groups)
+      if is_dirty then
+        local marker_start = name_end + 1  -- +1 for space before marker
+        table.insert(highlights, {
+          line = line_idx,
+          col_start = marker_start,
+          col_end = #line,
+          hl_group = 'SheetTodoUnsaved',
         })
       end
     end
@@ -234,7 +255,7 @@ local function update_unsaved_state()
     state.has_unsaved_changes = (#current > 0)
   end
 
-  -- Update right panel title if state changed
+  -- Update right panel title and left panel marker if state changed
   if prev ~= state.has_unsaved_changes and state.panel_state then
     local group_name = group_manager.get_active_group() or "Editor"
     -- Show just the leaf name in the title
@@ -244,6 +265,9 @@ local function update_unsaved_state()
       and (unsaved_marker .. " " .. display_name .. " ")
       or (" " .. display_name .. " ")
     state.panel_state:update_panel_title(PANEL_EDITOR, title)
+
+    -- Re-render left panel so the active group's unsaved marker updates
+    state.panel_state:render_panel(PANEL_GROUPS)
   end
 end
 
@@ -901,6 +925,9 @@ function M.mark_as_saved()
     local parts = group_manager.split_path(name)
     local display_name = parts[#parts] or name
     state.panel_state:update_panel_title(PANEL_EDITOR, " " .. display_name .. " ")
+
+    -- Re-render left panel to remove all unsaved markers
+    state.panel_state:render_panel(PANEL_GROUPS)
   end
 end
 
