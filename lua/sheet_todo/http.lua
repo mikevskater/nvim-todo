@@ -42,6 +42,7 @@ end
 function M.request(method, url, data, headers, callback)
   -- Build curl command
   local cmd = {'curl', '-s', '-w', '\n---HTTP_STATUS:%{http_code}---', '-X', method}
+  local request_body = nil
   
   -- Add SSL options for Windows (fixes exit code 35)
   if vim.fn.has('win32') == 1 or vim.fn.has('win64') == 1 then
@@ -59,26 +60,26 @@ function M.request(method, url, data, headers, callback)
     table.insert(cmd, key .. ': ' .. value)
   end
   
-  -- Add data for POST/PUT requests
+  -- Add data for POST/PUT requests.
+  -- Use stdin for the body to avoid Windows command-line length limits.
   if data and (method == 'POST' or method == 'PUT') then
-    -- If data is a table, encode as form data or JSON
     if type(data) == 'table' then
-      -- Check if we should use JSON
       local content_type = headers and headers['Content-Type'] or ''
       if content_type:find('application/json') then
-        table.insert(cmd, '-d')
-        table.insert(cmd, vim.json.encode(data))
+        request_body = vim.json.encode(data)
       else
-        -- Form data
+        local parts = {}
         for key, value in pairs(data) do
-          table.insert(cmd, '-d')
-          table.insert(cmd, key .. '=' .. M.url_encode(value))
+          table.insert(parts, key .. '=' .. M.url_encode(tostring(value)))
         end
+        request_body = table.concat(parts, '&')
       end
     else
-      table.insert(cmd, '-d')
-      table.insert(cmd, tostring(data))
+      request_body = tostring(data)
     end
+
+    table.insert(cmd, '--data-binary')
+    table.insert(cmd, '@-')
   end
   
   -- Add URL
@@ -89,7 +90,8 @@ function M.request(method, url, data, headers, callback)
   local stderr_data = {}
   
   -- Start the job
-  local job_id = vim.fn.jobstart(cmd, {
+  local job_opts = {
+    stdin = request_body and 'pipe' or nil,
     on_stdout = function(_, data, _)
       if data then
         for _, line in ipairs(data) do
@@ -142,10 +144,18 @@ function M.request(method, url, data, headers, callback)
         end
       end)
     end,
-  })
+  }
+
+  local job_id = vim.fn.jobstart(cmd, job_opts)
   
   if job_id <= 0 then
     callback(nil, "Failed to start curl command")
+    return
+  end
+
+  if request_body then
+    vim.fn.chansend(job_id, request_body)
+    vim.fn.chanclose(job_id, 'stdin')
   end
 end
 
