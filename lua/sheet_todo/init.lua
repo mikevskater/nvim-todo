@@ -124,8 +124,8 @@ function M.save()
       vim.api.nvim_echo({ { msg, hl } }, true, {})
 
       M.state.last_error = nil
-      multi_panel.mark_as_saved()
       group_manager.mark_as_saved()
+      multi_panel.mark_as_saved()
     else
       M.state.last_error = err
       vim.notify("Save failed: " .. (err or "unknown error"), vim.log.levels.ERROR)

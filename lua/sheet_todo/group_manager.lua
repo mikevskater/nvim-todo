@@ -545,6 +545,129 @@ function M.reorder_down(path)
   return true
 end
 
+-- ============================================================================
+-- REPARENTING
+-- ============================================================================
+
+---Check if candidate_path is a descendant of ancestor_path (or equal).
+---@param candidate_path string
+---@param ancestor_path string
+---@return boolean
+local function is_descendant_or_self(candidate_path, ancestor_path)
+  return candidate_path == ancestor_path
+    or candidate_path:find("^" .. vim.pesc(ancestor_path) .. "%.") ~= nil
+end
+
+---Get valid reparent destinations for a source group.
+---@param source_path string
+---@return { label: string, path: string }[]
+function M.get_reparent_targets(source_path)
+  local targets = {}
+  local source_parent = get_parent_path(source_path)
+
+  -- Option: move up to grandparent (if source has a grandparent)
+  if source_parent ~= "" then
+    local grandparent = get_parent_path(source_parent)
+    if grandparent ~= "" then
+      local gp_group = M.find_group(grandparent)
+      table.insert(targets, { label = "Up to: " .. (gp_group and gp_group.name or grandparent), path = grandparent })
+    end
+    -- Option: move to root level
+    table.insert(targets, { label = "Up to: Root", path = "" })
+  end
+
+  -- Option: move into a sibling (same parent, not self)
+  local sibling_list
+  if source_parent == "" then
+    sibling_list = state.groups
+  else
+    local parent_group = M.find_group(source_parent)
+    sibling_list = parent_group and parent_group.children or {}
+  end
+
+  for _, sib in ipairs(sibling_list) do
+    local sib_path = join_path(source_parent, sib.name)
+    if sib_path ~= source_path and not is_descendant_or_self(sib_path, source_path) then
+      table.insert(targets, { label = "Into: " .. sib.name, path = sib_path })
+    end
+  end
+
+  return targets
+end
+
+---Move a group from its current parent to a new parent.
+---@param source_path string Dot-separated path of group to move
+---@param dest_parent_path string Dot-separated path of new parent ("" for root)
+---@return boolean success, string? new_path
+function M.reparent_group(source_path, dest_parent_path)
+  -- Find source
+  local source_group, old_list, old_idx = M.find_group(source_path)
+  if not source_group or not old_list or not old_idx then
+    return false, nil
+  end
+
+  -- Validate: dest is not source or a descendant of source (circular ref)
+  if dest_parent_path ~= "" and is_descendant_or_self(dest_parent_path, source_path) then
+    return false, nil
+  end
+
+  -- Find dest list
+  local dest_list
+  if dest_parent_path == "" then
+    dest_list = state.groups
+  else
+    local dest_group = M.find_group(dest_parent_path)
+    if not dest_group then
+      return false, nil
+    end
+    if not dest_group.children then
+      dest_group.children = {}
+    end
+    dest_list = dest_group.children
+  end
+
+  -- Check no duplicate name in dest siblings
+  for _, g in ipairs(dest_list) do
+    if g.name == source_group.name then
+      return false, nil
+    end
+  end
+
+  -- Remove from old location
+  table.remove(old_list, old_idx)
+
+  -- Insert into new location
+  table.insert(dest_list, source_group)
+
+  -- Compute new path
+  local new_path = join_path(dest_parent_path, source_group.name)
+
+  -- Update active_group path prefix (same pattern as rename_group)
+  if state.active_group then
+    if state.active_group == source_path then
+      state.active_group = new_path
+    elseif state.active_group:find("^" .. vim.pesc(source_path) .. "%.") then
+      state.active_group = new_path .. state.active_group:sub(#source_path + 1)
+    end
+  end
+
+  -- Update expanded_paths prefixes
+  local new_expanded = {}
+  for _, p in ipairs(state.expanded_paths or {}) do
+    if p == source_path then
+      table.insert(new_expanded, new_path)
+    elseif p:find("^" .. vim.pesc(source_path) .. "%.") then
+      table.insert(new_expanded, new_path .. p:sub(#source_path + 1))
+    else
+      table.insert(new_expanded, p)
+    end
+  end
+  state.expanded_paths = new_expanded
+
+  state.dirty = true
+  return true, new_path
+end
+
 ---Set icon for a group.
 ---@param path string
 ---@param icon string Icon character (empty string to clear)

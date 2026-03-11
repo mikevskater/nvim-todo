@@ -6,10 +6,12 @@ local M = {}
 ---@field active boolean Whether completed tasks are currently hidden
 ---@field hidden_ranges { start: number, lines: string[] }[] Ranges of hidden lines
 ---@field original_lines string[]? Full buffer snapshot before hiding
+---@field line_map number[]? Mapping of visible line index -> original line index
 local state = {
   active = false,
   hidden_ranges = {},
   original_lines = nil,
+  line_map = nil,
 }
 
 ---Check if a line is a checked (completed) todo
@@ -26,17 +28,18 @@ local function is_unchecked(line)
   return line:match('^%s*%- %[ %]') ~= nil
 end
 
----Compute visible lines and hidden ranges from a set of lines
+---Compute visible lines, hidden ranges, and a line_map from a set of lines
 ---@param lines string[]
----@return string[] visible_lines, { start: number, lines: string[] }[] hidden_ranges
+---@return string[] visible_lines, { start: number, lines: string[] }[] hidden_ranges, number[] line_map
 local function compute_ranges(lines)
   local visible = {}
   local ranges = {}
+  local line_map = {}  -- line_map[visible_idx] = original_idx
   local hiding = false
   local current_hidden = {}
   local current_start = nil
 
-  for _, line in ipairs(lines) do
+  for orig_idx, line in ipairs(lines) do
     if hiding then
       if is_unchecked(line) then
         -- End of hidden range
@@ -44,6 +47,7 @@ local function compute_ranges(lines)
         current_hidden = {}
         hiding = false
         table.insert(visible, line)
+        table.insert(line_map, orig_idx)
       else
         table.insert(current_hidden, line)
       end
@@ -54,6 +58,7 @@ local function compute_ranges(lines)
         current_hidden = { line }
       else
         table.insert(visible, line)
+        table.insert(line_map, orig_idx)
       end
     end
   end
@@ -63,7 +68,7 @@ local function compute_ranges(lines)
     table.insert(ranges, { start = #visible + 1, lines = current_hidden })
   end
 
-  return visible, ranges
+  return visible, ranges, line_map
 end
 
 ---Hide completed tasks in the buffer
@@ -76,12 +81,14 @@ function M.hide(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   state.original_lines = lines
 
-  local visible, ranges = compute_ranges(lines)
+  local visible, ranges, line_map = compute_ranges(lines)
   state.hidden_ranges = ranges
+  state.line_map = line_map
 
   if #ranges == 0 then
     vim.notify("No completed tasks to hide", vim.log.levels.INFO)
     state.original_lines = nil
+    state.line_map = nil
     return
   end
 
@@ -108,6 +115,7 @@ function M.show(bufnr)
   state.active = false
   state.hidden_ranges = {}
   state.original_lines = nil
+  state.line_map = nil
 
   vim.notify("Showing all tasks", vim.log.levels.INFO)
 end
@@ -175,11 +183,23 @@ function M.get_full_content(bufnr)
   return table.concat(lines, "\n")
 end
 
+---Get the original line number for a visible line number.
+---When hide mode is active, maps visible index to original index.
+---@param visible_lnum number 1-based visible line number
+---@return number original 1-based original line number
+function M.get_original_lnum(visible_lnum)
+  if state.active and state.line_map and state.line_map[visible_lnum] then
+    return state.line_map[visible_lnum]
+  end
+  return visible_lnum
+end
+
 ---Reset state (called on window close)
 function M.reset()
   state.active = false
   state.hidden_ranges = {}
   state.original_lines = nil
+  state.line_map = nil
 end
 
 return M

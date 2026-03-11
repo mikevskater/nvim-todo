@@ -82,6 +82,31 @@ local function get_group_icon(group, is_expanded, has_children)
 end
 
 -- ============================================================================
+-- STATUSCOLUMN (original line numbers when hide_completed is active)
+-- ============================================================================
+
+---Global statuscolumn function for displaying original line numbers.
+_G.SheetTodoStatusCol = function()
+  local lnum = vim.v.lnum
+  local orig = hide_completed.get_original_lnum(lnum)
+  return string.format("%3d ", orig)
+end
+
+---Apply or clear statuscolumn on the right panel window.
+---Sets statuscolumn when BOTH line numbers are on AND hide_completed is active.
+local function apply_statuscolumn()
+  if not state.right_win or not vim.api.nvim_win_is_valid(state.right_win) then
+    return
+  end
+  local line_nums_on = vim.api.nvim_get_option_value('number', { win = state.right_win })
+  if line_nums_on and hide_completed.is_active() then
+    vim.api.nvim_set_option_value('statuscolumn', '%!v:lua.SheetTodoStatusCol()', { win = state.right_win })
+  else
+    vim.api.nvim_set_option_value('statuscolumn', '', { win = state.right_win })
+  end
+end
+
+-- ============================================================================
 -- LEFT PANEL RENDERING
 -- ============================================================================
 
@@ -348,6 +373,9 @@ local function switch_group(path)
     vim.api.nvim_set_option_value('number', group_manager.get_active_line_numbers(), { win = state.right_win })
   end
 
+  -- Update statuscolumn for hide_completed + line numbers state
+  apply_statuscolumn()
+
   -- Update right panel title (show leaf name)
   local parts = group_manager.split_path(path)
   local display_name = parts[#parts] or path
@@ -561,12 +589,14 @@ local function pick_color_fallback(path)
       if choice == "Clear color" then
         group_manager.set_colors(path, nil, nil)
         state.panel_state:render_panel(PANEL_GROUPS)
+        state.panel_state:focus_panel(PANEL_GROUPS)
       elseif choice == "Custom hex..." then
         vim.ui.input({ prompt = "Hex color (e.g. #FF5733): " }, function(hex)
           if not hex or hex == "" then return end
           vim.schedule(function()
             group_manager.set_colors(path, hex, hex)
             state.panel_state:render_panel(PANEL_GROUPS)
+            state.panel_state:focus_panel(PANEL_GROUPS)
           end)
         end)
       else
@@ -575,6 +605,7 @@ local function pick_color_fallback(path)
         if preset then
           group_manager.set_colors(path, preset.color, preset.color)
           state.panel_state:render_panel(PANEL_GROUPS)
+          state.panel_state:focus_panel(PANEL_GROUPS)
         end
       end
     end)
@@ -597,6 +628,7 @@ local function handle_set_color()
         vim.schedule(function()
           group_manager.set_colors(path, hex, hex)
           state.panel_state:render_panel(PANEL_GROUPS)
+          state.panel_state:focus_panel(PANEL_GROUPS)
         end)
       end,
     })
@@ -605,15 +637,22 @@ local function handle_set_color()
   end
 end
 
+---After reorder + re-render, find the moved group by path and set cursor to its row.
+---@param path string
+local function cursor_follow_path(path)
+  for i, node in ipairs(tree_state.visible_nodes) do
+    if node.path == path then
+      state.panel_state:set_cursor(PANEL_GROUPS, i, 0)
+      break
+    end
+  end
+end
+
 local function handle_reorder_down()
   local path = get_group_under_cursor()
   if path and group_manager.reorder_down(path) then
     state.panel_state:render_panel(PANEL_GROUPS)
-    -- Move cursor down to follow the group
-    local row = state.panel_state:get_cursor(PANEL_GROUPS)
-    if row then
-      state.panel_state:set_cursor(PANEL_GROUPS, row + 1, 0)
-    end
+    cursor_follow_path(path)
   end
 end
 
@@ -621,12 +660,68 @@ local function handle_reorder_up()
   local path = get_group_under_cursor()
   if path and group_manager.reorder_up(path) then
     state.panel_state:render_panel(PANEL_GROUPS)
-    -- Move cursor up to follow the group
-    local row = state.panel_state:get_cursor(PANEL_GROUPS)
-    if row then
-      state.panel_state:set_cursor(PANEL_GROUPS, row - 1, 0)
-    end
+    cursor_follow_path(path)
   end
+end
+
+local function handle_reparent()
+  local node = get_node_under_cursor()
+  if not node then return end
+  local path = node.path
+
+  local targets = group_manager.get_reparent_targets(path)
+  if #targets == 0 then
+    vim.notify("No valid destinations for this group", vim.log.levels.INFO)
+    return
+  end
+
+  local labels = {}
+  for _, t in ipairs(targets) do
+    table.insert(labels, t.label)
+  end
+
+  vim.ui.select(labels, { prompt = "Move '" .. node.name .. "' to:" }, function(choice, idx)
+    if not choice or not idx then return end
+    vim.schedule(function()
+      local target = targets[idx]
+      local ok, new_path = group_manager.reparent_group(path, target.path)
+      if ok and new_path then
+        -- Update tree_state.expanded: rewrite path prefixes
+        local new_expanded = {}
+        for p, v in pairs(tree_state.expanded) do
+          if p == path then
+            new_expanded[new_path] = v
+          elseif p:find("^" .. vim.pesc(path) .. "%.") then
+            new_expanded[new_path .. p:sub(#path + 1)] = v
+          else
+            new_expanded[p] = v
+          end
+        end
+        tree_state.expanded = new_expanded
+
+        -- Auto-expand dest parent so the moved group is visible
+        if target.path ~= "" then
+          tree_state.expanded[target.path] = true
+        end
+
+        state.panel_state:render_panel(PANEL_GROUPS)
+
+        -- Place cursor on moved group
+        cursor_follow_path(new_path)
+
+        -- Update editor title if active group path changed
+        local active = group_manager.get_active_group()
+        if active then
+          local parts = group_manager.split_path(active)
+          state.panel_state:update_panel_title(PANEL_EDITOR, " " .. (parts[#parts] or active) .. " ")
+        end
+
+        vim.notify("Moved '" .. node.name .. "' to " .. (target.path == "" and "root" or target.path), vim.log.levels.INFO)
+      else
+        vim.notify("Move failed (duplicate name or invalid destination)", vim.log.levels.WARN)
+      end
+    end)
+  end)
 end
 
 -- ============================================================================
@@ -652,6 +747,7 @@ end
 local function handle_toggle_completed()
   if state.right_buf and vim.api.nvim_buf_is_valid(state.right_buf) then
     hide_completed.toggle(state.right_buf)
+    apply_statuscolumn()
   end
 end
 
@@ -690,6 +786,7 @@ local function handle_toggle_line_numbers()
   local current = group_manager.get_active_line_numbers()
   group_manager.set_active_line_numbers(not current)
   vim.api.nvim_set_option_value('number', not current, { win = state.right_win })
+  apply_statuscolumn()
 end
 
 -- ============================================================================
@@ -720,6 +817,7 @@ local function build_controls()
       { key = "i", desc = "Set icon" },
       { key = "c", desc = "Set color" },
       { key = "J / K", desc = "Reorder group" },
+      { key = "m", desc = "Move to different parent" },
     }},
     { header = "Editing", keys = {
       { key = fmt_key(km.save), desc = "Save to cloud" },
@@ -854,6 +952,9 @@ function M.show(on_save_callback)
     -- Apply per-group line numbers (default off)
     vim.api.nvim_set_option_value('number', group_manager.get_active_line_numbers(), { win = state.right_win })
 
+    -- Apply statuscolumn for hide_completed + line numbers state
+    apply_statuscolumn()
+
     -- Change tracking
     attach_change_tracking(state.right_buf)
 
@@ -892,6 +993,7 @@ function M.show(on_save_callback)
     ['c'] = handle_set_color,
     ['J'] = handle_reorder_down,
     ['K'] = handle_reorder_up,
+    ['m'] = handle_reparent,
   })
 
   -- Set up right panel keymaps
