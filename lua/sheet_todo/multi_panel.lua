@@ -86,9 +86,31 @@ end
 -- ============================================================================
 
 ---Global statuscolumn function for displaying original line numbers.
+---Handles wrapped lines (blank for continuations) and relative line numbers.
 _G.SheetTodoStatusCol = function()
   local lnum = vim.v.lnum
+  local virtnum = vim.v.virtnum
+
+  -- virtnum > 0 means this is a wrapped continuation line — show blank
+  if virtnum > 0 then
+    return "    "
+  end
+
   local orig = hide_completed.get_original_lnum(lnum)
+
+  -- Check if relative line numbers are enabled on the current window
+  local relnum = vim.wo.relativenumber
+  if relnum then
+    local cursor_lnum = vim.api.nvim_win_get_cursor(0)[1]
+    local dist = math.abs(lnum - cursor_lnum)
+    if dist == 0 then
+      -- Current line: show absolute original number
+      return string.format("%3d ", orig)
+    else
+      return string.format("%3d ", dist)
+    end
+  end
+
   return string.format("%3d ", orig)
 end
 
@@ -368,9 +390,11 @@ local function switch_group(path)
     set_right_cursor(group_manager.get_active_cursor())
   end)
 
-  -- Apply per-group line numbers
+  -- Apply per-group line numbers, match global relativenumber
   if state.right_win and vim.api.nvim_win_is_valid(state.right_win) then
-    vim.api.nvim_set_option_value('number', group_manager.get_active_line_numbers(), { win = state.right_win })
+    local ln_on = group_manager.get_active_line_numbers()
+    vim.api.nvim_set_option_value('number', ln_on, { win = state.right_win })
+    vim.api.nvim_set_option_value('relativenumber', ln_on and vim.o.relativenumber or false, { win = state.right_win })
   end
 
   -- Update statuscolumn for hide_completed + line numbers state
@@ -791,8 +815,15 @@ local function handle_toggle_line_numbers()
     return
   end
   local current = group_manager.get_active_line_numbers()
-  group_manager.set_active_line_numbers(not current)
-  vim.api.nvim_set_option_value('number', not current, { win = state.right_win })
+  local new_state = not current
+  group_manager.set_active_line_numbers(new_state)
+  vim.api.nvim_set_option_value('number', new_state, { win = state.right_win })
+  -- Match nvim's global relativenumber setting
+  if new_state then
+    vim.api.nvim_set_option_value('relativenumber', vim.o.relativenumber, { win = state.right_win })
+  else
+    vim.api.nvim_set_option_value('relativenumber', false, { win = state.right_win })
+  end
   apply_statuscolumn()
 end
 
@@ -982,8 +1013,10 @@ function M.show(on_save_callback)
     vim.api.nvim_set_option_value('wrap', true, { win = state.right_win })
     vim.api.nvim_set_option_value('linebreak', true, { win = state.right_win })
 
-    -- Apply per-group line numbers (default off)
-    vim.api.nvim_set_option_value('number', group_manager.get_active_line_numbers(), { win = state.right_win })
+    -- Apply per-group line numbers (default off), match global relativenumber
+    local ln_on = group_manager.get_active_line_numbers()
+    vim.api.nvim_set_option_value('number', ln_on, { win = state.right_win })
+    vim.api.nvim_set_option_value('relativenumber', ln_on and vim.o.relativenumber or false, { win = state.right_win })
 
     -- Apply statuscolumn for hide_completed + line numbers state
     apply_statuscolumn()
@@ -1009,6 +1042,12 @@ function M.show(on_save_callback)
   for _, key in ipairs(close_keys) do
     shared_keymaps[key] = handle_close
   end
+
+  -- Save keymap works from both panels
+  local save_key = km.save
+  if type(save_key) == 'table' then save_key = save_key[1] end
+  shared_keymaps[save_key] = handle_save
+
   -- Use explicit toggle instead of focus_next/prev so mouse clicks don't desync
   local function toggle_panel_focus()
     local cur_win = vim.api.nvim_get_current_win()
