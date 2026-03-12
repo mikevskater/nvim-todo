@@ -7,7 +7,7 @@ local tree_state = require('nvim-todo.ui.panels.left.tree_state')
 local statuscolumn = require('nvim-todo.ui.multi_panel.statuscolumn')
 local active = require('nvim-todo.data.manager.active')
 local path_utils = require('nvim-todo.data.group.path')
-local hide_completed = require('sheet_todo.features.hide_completed')
+local hide_completed = require('nvim-todo.features.hide_completed')
 
 ---Switch to a different group.
 ---@param path string Group path to switch to

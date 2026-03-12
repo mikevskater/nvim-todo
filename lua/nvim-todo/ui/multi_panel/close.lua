@@ -5,8 +5,8 @@ local state = require('nvim-todo.ui.multi_panel.state')
 local right_buffer = require('nvim-todo.ui.panels.right.buffer')
 local active = require('nvim-todo.data.manager.active')
 local highlights = require('nvim-todo.ui.highlights')
-local sticky_headers = require('sheet_todo.features.sticky_headers')
-local hide_completed = require('sheet_todo.features.hide_completed')
+local sticky_headers = require('nvim-todo.features.sticky_headers')
+local hide_completed = require('nvim-todo.features.hide_completed')
 
 ---Persist content/cursor/expanded to data layer, clean up features, reset state.
 function M.cleanup()

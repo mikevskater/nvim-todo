@@ -5,7 +5,7 @@ local state = require('nvim-todo.ui.multi_panel.state')
 local right_buffer = require('nvim-todo.ui.panels.right.buffer')
 local statuscolumn = require('nvim-todo.ui.multi_panel.statuscolumn')
 local active = require('nvim-todo.data.manager.active')
-local hide_completed = require('sheet_todo.features.hide_completed')
+local hide_completed = require('nvim-todo.features.hide_completed')
 
 function M.handle_save()
   if state.on_save then

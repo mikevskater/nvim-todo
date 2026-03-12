@@ -2,7 +2,7 @@
 local M = {}
 
 local state = require('nvim-todo.ui.multi_panel.state')
-local hide_completed = require('sheet_todo.features.hide_completed')
+local hide_completed = require('nvim-todo.features.hide_completed')
 
 ---Setup global statuscolumn function.
 ---Sets `_G.NvimTodoStatusCol` for use in statuscolumn option.

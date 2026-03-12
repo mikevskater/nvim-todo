@@ -12,8 +12,8 @@ local left_keymaps = require('nvim-todo.ui.panels.left.keymaps')
 local right_keymaps = require('nvim-todo.ui.panels.right.keymaps')
 local active = require('nvim-todo.data.manager.active')
 local config = require('nvim-todo.config')
-local folding = require('sheet_todo.features.folding')
-local sticky_headers = require('sheet_todo.features.sticky_headers')
+local folding = require('nvim-todo.features.folding')
+local sticky_headers = require('nvim-todo.features.sticky_headers')
 
 ---Show the multi-panel UI.
 ---@param on_save_callback function Save callback from init.lua
