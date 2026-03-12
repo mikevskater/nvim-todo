@@ -1,0 +1,19 @@
+---@class GroupEntry
+---@field name string
+---@field content string Decoded content string
+---@field cursor_pos { line: number, col: number }
+---@field icon string? Nerd Font char or emoji
+---@field icon_color string? Hex color string
+---@field name_color string? Hex color string
+---@field line_numbers boolean? Show line numbers for this group
+---@field children GroupEntry[]? Sub-groups (nil = leaf)
+---@field saved_content string? Content snapshot from last load/save (runtime only, not persisted)
+---@field dirty boolean? True when content differs from saved_content (runtime only, not persisted)
+
+---@class TreeNode
+---@field path string Dot-separated path
+---@field name string Display name
+---@field level number Depth (0 = root)
+---@field is_expanded boolean
+---@field has_children boolean
+---@field group GroupEntry
