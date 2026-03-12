@@ -631,6 +631,13 @@ local function handle_set_color()
           state.panel_state:focus_panel(PANEL_GROUPS)
         end)
       end,
+      on_cancel = function()
+        vim.schedule(function()
+          if state.panel_state then
+            state.panel_state:focus_panel(PANEL_GROUPS)
+          end
+        end)
+      end,
     })
   else
     pick_color_fallback(path)
@@ -1116,6 +1123,11 @@ end
 ---@param value boolean
 function M.set_ignore_changes(value)
   state.ignore_changes = value
+end
+
+---Sync current expanded paths from UI tree_state to group_manager for persistence.
+function M.sync_expanded_paths()
+  group_manager.set_expanded_paths(tree_state.expanded)
 end
 
 ---Clean up on close.

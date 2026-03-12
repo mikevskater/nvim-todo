@@ -281,6 +281,16 @@ function M.setup(winid, bufnr)
       vim.schedule(update)
     end,
   })
+
+  -- VimResized is global (not buffer-specific), so guard the callback
+  vim.api.nvim_create_autocmd('VimResized', {
+    group = state.augroup,
+    callback = function()
+      if state.notepad_win and vim.api.nvim_win_is_valid(state.notepad_win) then
+        vim.schedule(update)
+      end
+    end,
+  })
 end
 
 ---Clean up overlay and autocmds.

@@ -89,6 +89,9 @@ function M.save()
   group_manager.set_active_content(multi_panel.get_content())
   group_manager.set_active_cursor(multi_panel.get_cursor())
 
+  -- Sync expanded paths from UI to group_manager before serializing
+  multi_panel.sync_expanded_paths()
+
   -- Serialize all groups and save
   local data = group_manager.serialize()
 
