@@ -17,6 +17,19 @@ local state = {
   _overlay_height = 0,
 }
 
+---Statuscolumn function for the sticky header overlay.
+---Displays original buffer line numbers with LineNr highlight.
+---@return string
+function _G.NvimTodoStickyLnr()
+  local lnum = vim.v.lnum
+  local real_lnum = state._overlay_lnums and state._overlay_lnums[lnum]
+  if real_lnum then
+    local width = state._overlay_lnr_width or 3
+    return '%#LineNr#' .. string.format('%' .. width .. 'd ', real_lnum)
+  end
+  return ''
+end
+
 ---Set the window/buffer state (called by setup).
 ---@param winid number
 ---@param bufnr number
@@ -53,7 +66,7 @@ end
 ---@param bufnr number
 ---@param first_visible number 1-indexed first visible line
 ---@param overlay_height number Current overlay height (lines covered by overlay)
----@return {level: number, text: string}[]
+---@return {level: number, text: string, lnum: number}[]
 local function build_header_stack(bufnr, first_visible, overlay_height)
   local stack = {}
   local min_level = math.huge
@@ -79,7 +92,7 @@ local function build_header_stack(bufnr, first_visible, overlay_height)
 
     local level = get_header_level(line)
     if level and level < min_level then
-      table.insert(stack, 1, { level = level, text = line })
+      table.insert(stack, 1, { level = level, text = line, lnum = lnum })
       min_level = level
       if min_level <= 1 then break end
     end
@@ -114,6 +127,8 @@ function M.close_overlay()
   end
   state.overlay_buf = nil
   state._overlay_height = 0
+  state._overlay_lnums = nil
+  state._overlay_lnr_width = nil
 end
 
 ---Create or update the overlay window with the given header lines.
@@ -214,15 +229,49 @@ function M.update()
     height = math.min(#stack, max_height)
   end
 
-  local header_lines = {}
+  local display_stack = {}
   local start_idx = #stack - height + 1
   if start_idx < 1 then start_idx = 1 end
   for i = start_idx, #stack do
-    table.insert(header_lines, stack[i].text)
+    table.insert(display_stack, stack[i])
+  end
+
+  -- Check if line numbers are enabled on the notepad window
+  local show_lnr = notepad_win and vim.api.nvim_win_is_valid(notepad_win)
+    and vim.api.nvim_get_option_value('number', { win = notepad_win })
+
+  local header_lines = {}
+  for _, entry in ipairs(display_stack) do
+    table.insert(header_lines, entry.text)
   end
 
   show_overlay(header_lines)
   state._overlay_height = #header_lines
+
+  -- Mirror line number settings from notepad window onto overlay
+  if state.overlay_win and vim.api.nvim_win_is_valid(state.overlay_win) then
+    if show_lnr then
+      -- Store lnum mapping for statuscolumn lookup
+      state._overlay_lnums = {}
+      for i, entry in ipairs(display_stack) do
+        state._overlay_lnums[i] = entry.lnum
+      end
+      -- Compute digit width to match Neovim's native number column.
+      -- numberwidth includes the trailing space, so digit width = numberwidth - 1.
+      -- Also ensure enough digits for the largest line number.
+      local total_lines = vim.api.nvim_buf_line_count(notepad_buf)
+      local min_nw = vim.api.nvim_get_option_value('numberwidth', { win = notepad_win })
+      state._overlay_lnr_width = math.max(min_nw - 1, #tostring(total_lines))
+      -- Use statuscolumn to display original buffer line numbers
+      vim.api.nvim_set_option_value('number', false, { win = state.overlay_win })
+      vim.api.nvim_set_option_value('statuscolumn',
+        '%!v:lua.NvimTodoStickyLnr()', { win = state.overlay_win })
+    else
+      vim.api.nvim_set_option_value('number', false, { win = state.overlay_win })
+      vim.api.nvim_set_option_value('statuscolumn', '', { win = state.overlay_win })
+      state._overlay_lnums = nil
+    end
+  end
 
   if not state._adjusting and notepad_win == vim.api.nvim_get_current_win() then
     local visual_row = vim.api.nvim_win_call(notepad_win, function()

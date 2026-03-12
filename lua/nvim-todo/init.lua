@@ -57,6 +57,10 @@ function M.show()
     end
 
     manager.load(data)
+
+    -- Refresh UI tree state from loaded data (expanded paths)
+    ui_state.tree_state.expanded = manager.get_expanded_paths()
+
     multi_panel.set_content(manager.get_active_content())
 
     vim.schedule(function()
